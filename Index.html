@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>לוח קנבן - PWA</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="לוח קנבן">
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogItezczXEpXVXRog15DXlXVVI15XXvdeTKS5DXoNeQXFfSDIsRCiCICAic2hvcnRfbmFtZSI6ICLmfbCJzeRN+Q15V1XiFjIEfSD60CwKICAiZGVzY3JpcHRpb24iOiAi157nOeV31Wk15XXgFm21zXnoSBXVR5dSBYZCISIEfSD60BfCLCUKICAic3RhcnRfdXJsIjogIi8iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNmOWZhZmIiLAogICJ0aGVtZV9jb2xvciI6ICIjM2I4MmY2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCwrPFoAAAFgY3gNCkFBBBYdDgXcvMHe4QFAYAAAN4dSAAAEEH7vt8NqLCIVJ8hF4NVXc93rYANA0dSACd="")$%/"}"]],
+                {"src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSIjM2I4MmY2Ii8+Cjx0ZXh0IHg9IjI1NiIgeT0iMjc2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNDAiIGZpbGw9IndoaXRlIj7igIE8L3RleHQ+Cjwvc3ZnPg==", "sizes": "512x512", "type": "image/svg+xml"}
+  ]
+}">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        .task.dragging {
+            opacity: 0.5;
+            border: 2px dashed #3b82f6;
+        }
+        .column.dragover {
+            background-color: #bfdbfe;
+        }
+        .calendar-container, .import-modal, .edit-modal, .sync-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+        .calendar-content, .import-content, .edit-content, .sync-content {
+            background: white;
+            margin: 20px;
+            border-radius: 8px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .sync-indicator {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1001;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .sync-success { background: #10b981; }
+        .sync-error { background: #ef4444; }
+        .sync-loading { background: #f59e0b; }
+        .offline-indicator {
+            background: #6b7280;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+        }
+        .install-prompt {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #3b82f6;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: none;
+        }
+        @media (max-width: 768px) {
+            .calendar-content, .import-content, .edit-content, .sync-content { 
+                margin: 10px; 
+                padding: 15px;
+            }
+            .task-buttons { 
+                flex-wrap: wrap; 
+                gap: 1px;
+            }
+            .task-buttons button { 
+                font-size: 10px; 
+                padding: 2px 4px; 
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+
+    <!-- מחוון סנכרון -->
+    <div id="syncIndicator" class="sync-indicator" style="display: none;"></div>
+    
+    <!-- מחוון אופליין -->
+    <div id="offlineIndicator" class="offline-indicator" style="display: none;">
+        📵 מצב אופליין
+    </div>
+
+    <!-- הודעת התקנה -->
+    <div id="installPrompt" class="install-prompt">
+        <button id="installButton" class="bg-white text-blue-600 px-4 py-2 rounded mr-2 font-bold">
+            📱 התקן כאפליקציה
+        </button>
+        <button id="dismissInstall" class="text-white underline">
+            ✕ לא עכשיו
+        </button>
+    </div>
+
+    <div class="w-full max-w-6xl">
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4 md:mb-0">לוח קנבן - PWA</h1>
+            
+            <!-- פאנל סנכרון -->
+            <div class="flex gap-2 items-center">
+                <div id="lastSyncTime" class="text-xs text-gray-500"></div>
+                <button id="syncButton" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm">
+                    🔄 סנכרן
+                </button>
+                <button id="syncSettingsButton" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 text-sm">
+                    ⚙️ הגדרות
+                </button>
+            </div>
+        </div>
+
+        <!-- הוספת משימה -->
+        <div class="mb-6 w-full flex gap-2 flex-wrap">
+            <input type="text" id="newTaskInput" placeholder="הזן משימה חדשה..."
+                   class="flex-grow px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="date" id="newTaskDate" class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="time" id="newTaskTime" class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="addTaskButton" class="px-6 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600">
+                הוסף
+            </button>
+        </div>
+
+        <!-- כפתורי פעולה -->
+        <div class="mb-4 flex flex-wrap gap-2 justify-center">
+            <button id="showCalendarButton" class="px-4 py-2 bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-600 text-sm">
+                📅 לוח שנה
+            </button>
+            <button id="exportCsvButton" class="px-4 py-2 bg-green-500 text-white font-semibold rounded-md hover:bg-green-600 text-sm">
+                📤 CSV
+            </button>
+            <button id="exportAllToOutlookButton" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 text-sm">
+                📧 Outlook
+            </button>
+        </div>
+
+        <!-- עמודות הקנבן -->
+        <div class="flex flex-col md:flex-row gap-6 w-full">
+            <div class="column flex-1 bg-white rounded-lg shadow-md p-4" data-status="todo">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">לעשות</h2>
+                <div id="todo-tasks" class="task-list min-h-[50px]"></div>
+            </div>
+            <div class="column flex-1 bg-white rounded-lg shadow-md p-4" data-status="inprogress">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">בביצוע</h2>
+                <div id="inprogress-tasks" class="task-list min-h-[50px]"></div>
+            </div>
+            <div class="column flex-1 bg-white rounded-lg shadow-md p-4" data-status="done">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">בוצע</h2>
+                <div id="done-tasks" class="task-list min-h-[50px]"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- מודל הגדרות סנכרון -->
+    <div id="syncModal" class="sync-modal">
+        <div class="sync-content max-w-lg mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">הגדרות סנכרון</h2>
+                <button id="closeSyncSettings" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">✕</button>
+            </div>
+            
+            <div class="space-y-6">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="font-bold mb-2">🔄 סנכרון עם GitHub Gist</h3>
+                    <p class="text-sm text-gray-600 mb-3">
+                        השתמש ב-GitHub Gist (חינמי) לסנכרון בין מכשירים. 
+                        <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-600 underline">
+                            צור טוקן כאן
+                        </a>
+                    </p>
+                    <input type="text" id="githubToken" placeholder="הדבק כאן את ה-GitHub Token..."
+                           class="w-full px-3 py-2 border rounded-md text-sm mb-2">
+                    <input type="text" id="gistId" placeholder="Gist ID (אופציונלי - ליצירת Gist חדש)"
+                           class="w-full px-3 py-2 border rounded-md text-sm mb-2">
+                    <div class="flex gap-2">
+                        <button id="testSyncButton" class="px-4 py-2 bg-blue-500 text-white rounded text-sm">
+                            🧪 בדוק חיבור
+                        </button>
+                        <button id="saveSyncSettings" class="px-4 py-2 bg-green-500 text-white rounded text-sm">
+                            💾 שמור
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <h3 class="font-bold mb-2">⚙️ אפשרויות</h3>
+                    <label class="flex items-center mb-2">
+                        <input type="checkbox" id="autoSync" class="mr-2">
+                        <span class="text-sm">סנכרן אוטומטית בפתיחת האפליקציה</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" id="syncOnExit" class="mr-2">
+                        <span class="text-sm">סנכרן בסגירת האפליקציה</span>
+                    </label>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="font-bold mb-2">📊 מידע</h3>
+                    <div id="syncStatus" class="text-sm text-gray-600">
+                        לא מוגדר סנכרון
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="statusToast" class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-semibold z-50" style="display: none;"></div>
+
+<script>
+(function() {
+    'use strict';
+    
+    let tasks = [];
+    let deferredPrompt;
+    let syncConfig = {
+        githubToken: '',
+        gistId: '',
+        autoSync: true,
+        syncOnExit: true
+    };
+
+    // רכיבי DOM
+    const elements = {};
+    const elementIds = [
+        'newTaskInput', 'newTaskDate', 'newTaskTime', 'addTaskButton',
+        'todo-tasks', 'inprogress-tasks', 'done-tasks',
+        'showCalendarButton', 'exportCsvButton', 'exportAllToOutlookButton',
+        'syncButton', 'syncSettingsButton', 'syncModal', 'closeSyncSettings',
+        'githubToken', 'gistId', 'autoSync', 'syncOnExit', 'testSyncButton', 'saveSyncSettings',
+        'syncIndicator', 'offlineIndicator', 'lastSyncTime', 'syncStatus',
+        'installPrompt', 'installButton', 'dismissInstall', 'statusToast'
+    ];
+
+    elementIds.forEach(id => {
+        elements[id] = document.getElementById(id);
+    });
+
+    const columns = document.querySelectorAll('.column');
+
+    // אחסון מקומי משופר
+    const storage = {
+        getItem: function(key) {
+            try {
+                return localStorage.getItem(key);
+            } catch (e) {
+                console.warn('localStorage not available');
+                return this.memory[key] || null;
+            }
+        },
+        setItem: function(key, value) {
+            try {
+                localStorage.setItem(key, value);
+            } catch (e) {
+                console.warn('localStorage not available');
+                this.memory[key] = value;
+            }
+        },
+        memory: {}
+    };
+
+    // פונקציות עזר
+    const showToast = (message, type = 'info') => {
+        if (!elements.statusToast) return;
+        
+        const colors = {
+            error: 'bg-red-500',
+            success: 'bg-green-500', 
+            warning: 'bg-yellow-500',
+            info: 'bg-blue-500'
+        };
+        
+        elements.statusToast.textContent = message;
+        elements.statusToast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-semibold z-50 ${colors[type] || colors.info}`;
+        elements.statusToast.style.display = 'block';
+        
+        setTimeout(() => {
+            elements.statusToast.style.display = 'none';
+        }, 3000);
+    };
+
+    const showSyncIndicator = (message, type = 'loading') => {
+        if (!elements.syncIndicator) return;
+        
+        elements.syncIndicator.textContent = message;
+        elements.syncIndicator.className = `sync-indicator sync-${type}`;
+        elements.syncIndicator.style.display = 'block';
+        
+        if (type !== 'loading') {
+            setTimeout(() => {
+                elements.syncIndicator.style.display = 'none';
+            }, 3000);
+        }
+    };
+
+    // יכולות PWA
+    const setupPWA = () => {
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                const CACHE_NAME = 'kanban-v1';
+                const urlsToCache = ['/'];
+                
+                self.addEventListener('install', event => {
+                    event.waitUntil(
+                        caches.open(CACHE_NAME)
+                            .then(cache => cache.addAll(urlsToCache))
+                    );
+                });
+                
+                self.addEventListener('fetch', event => {
+                    event.respondWith(
+                        caches.match(event.request)
+                            .then(response => response || fetch(event.request))
+                    );
+                });
+            `;
+            
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            
+            navigator.serviceWorker.register(swUrl)
+                .then(() => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker registration failed'));
+        }
+
+        // התקנה כאפליקציה
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            if (elements.installPrompt) {
+                elements.installPrompt.style.display = 'block';
+            }
+        });
+
+        if (elements.installButton) {
+            elements.installButton.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const result = await deferredPrompt.userChoice;
+                    if (result.outcome === 'accepted') {
+                        showToast('האפליקציה הותקנה בהצלחה!', 'success');
+                    }
+                    deferredPrompt = null;
+                    elements.installPrompt.style.display = 'none';
+                }
+            });
+        }
+
+        if (elements.dismissInstall) {
+            elements.dismissInstall.addEventListener('click', () => {
+                elements.installPrompt.style.display = 'none';
+            });
+        }
+
+        // זיהוי מצב אופליין/אונליין
+        const updateOnlineStatus = () => {
+            if (elements.offlineIndicator) {
+                elements.offlineIndicator.style.display = navigator.onLine ? 'none' : 'block';
+            }
+        };
+
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+        updateOnlineStatus();
+    };
+
+    // סנכרון עם GitHub Gist
+    const syncManager = {
+        async uploadToGist(data) {
+            if (!syncConfig.githubToken) {
+                throw new Error('לא מוגדר GitHub Token');
+            }
+
+            const gistData = {
+                description: 'Kanban App Data - ' + new Date().toLocaleDateString('he-IL'),
+                public: false,
+                files: {
+                    'kanban-data.json': {
+                        content: JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            tasks: data
+                        }, null, 2)
+                    }
+                }
+            };
+
+            const url = syncConfig.gistId 
+                ? `https://api.github.com/gists/${syncConfig.gistId}`
+                : 'https://api.github.com/gists';
+            
+            const method = syncConfig.gistId ? 'PATCH' : 'POST';
+
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Authorization': `token ${syncConfig.githubToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(gistData)
+            });
+
+            if (!response.ok) {
+                throw new Error(`שגיאה ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            
+            if (!syncConfig.gistId) {
+                syncConfig.gistId = result.id;
+                this.saveSyncConfig();
+            }
+
+            return result;
+        },
+
+        async downloadFromGist() {
+            if (!syncConfig.githubToken || !syncConfig.gistId) {
+                throw new Error('לא מוגדרים פרטי הסנכרון');
+            }
+
+            const response = await fetch(`https://api.github.com/gists/${syncConfig.gistId}`, {
+                headers: {
+                    'Authorization': `token ${syncConfig.githubToken}`,
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`שגיאה ${response.status}: ${response.statusText}`);
+            }
+
+            const gist = await response.json();
+            const content = gist.files['kanban-data.json']?.content;
+            
+            if (!content) {
+                throw new Error('לא נמצא קובץ נתונים ב-Gist');
+            }
+
+            const data = JSON.parse(content);
+            return data.tasks || [];
+        },
+
+        async testConnection() {
+            if (!syncConfig.githubToken) {
+                throw new Error('אנא הזן GitHub Token');
+            }
+
+            const response = await fetch('https://api.github.com/user', {
+                headers: {
+                    'Authorization': `token ${syncConfig.githubToken}`,
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Token לא תקין');
+            }
+
+            const user = await response.json();
+            return user.login;
+        },
+
+        saveSyncConfig() {
+            storage.setItem('syncConfig', JSON.stringify(syncConfig));
+        },
+
+        loadSyncConfig() {
+            const saved = storage.getItem('syncConfig');
+            if (saved) {
+                syncConfig = { ...syncConfig, ...JSON.parse(saved) };
+            }
+            this.updateSyncUI();
+        },
+
+        updateSyncUI() {
+            if (elements.githubToken) elements.githubToken.value = syncConfig.githubToken || '';
+            if (elements.gistId) elements.gistId.value = syncConfig.gistId || '';
+            if (elements.autoSync) elements.autoSync.checked = syncConfig.autoSync;
+            if (elements.syncOnExit) elements.syncOnExit.checked = syncConfig.syncOnExit;
+            
+            if (elements.syncStatus) {
+                const hasToken = syncConfig.githubToken;
+                const hasGist = syncConfig.gistId;
+                
+                let status = 'לא מוגדר סנכרון';
+                if (hasToken && hasGist) {
+                    status = '✅ מוכן לסנכרון';
+                } else if (hasToken) {
+                    status = '⚠️ יש Token, אין Gist ID';
+                } else {
+                    status = '❌ אין Token';
+                }
+                
+                elements.syncStatus.textContent = status;
+            }
+
+            const lastSync = storage.getItem('lastSyncTime');
+            if (elements.lastSyncTime && lastSync) {
+                const date = new Date(lastSync);
+                elements.lastSyncTime.textContent = `סנכרון אחרון: ${date.toLocaleString('he-IL')}`;
+            }
+        }
+    };
+
+    // פונקציות משימות (בסיסיות)
+    const addTask = () => {
+        const text = elements.newTaskInput?.value.trim();
+        const date = elements.newTaskDate?.value || null;
+        const time = elements.newTaskTime?.value || null;
+        
+        if (text) {
+            const newTask = {
+                id: Date.now(),
+                text: text,
+                status: 'todo',
+                date: date,
+                time: time
+            };
+            tasks.push(newTask);
+            
+            if (elements.newTaskInput) elements.newTaskInput.value = '';
+            if (elements.newTaskDate) elements.newTaskDate.value = '';
+            if (elements.newTaskTime) elements.newTaskTime.value = '';
+            
+            renderTasks();
+            saveTasks();
+            showToast('משימה נוספה', 'success');
+        }
+    };
+
+    const updateTaskStatus = (id, newStatus) => {
+        const taskIndex = tasks.findIndex(task => task.id === id);
+        if (taskIndex > -1) {
+            tasks[taskIndex].status = newStatus;
+            renderTasks();
+            saveTasks();
+            if (newStatus === 'done' && typeof confetti !== 'undefined') {
+                confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+            }
+        }
+    };
+
+    const deleteTask = (id) => {
+        tasks = tasks.filter(task => task.id !== id);
+        renderTasks();
+        saveTasks();
+    };
+
+    // יצירת אלמנט משימה
+    const createTaskElement = (task) => {
+        const taskDiv = document.createElement('div');
+        taskDiv.className = 'task bg-gray-100 p-3 rounded-md shadow-sm mb-3 cursor-grab';
+        taskDiv.setAttribute('draggable', true);
+        taskDiv.dataset.id = task.id;
+
+        const content = `
+            <div class="flex justify-between items-center mb-2">
+                <span class="flex-1">${task.text}</span>
+                <div class="flex gap-1 task-buttons">
+                    <button onclick="deleteTask(${task.id})" class="text-red-500 hover:text-red-700 text-sm">×</button>
+                </div>
+            </div>
+            <div class="text-sm text-gray-500">
+                ${task.date ? `📅 ${new Date(task.date).toLocaleDateString('he-IL')}` : ''}
+                ${task.time ? ` ⏰ ${task.time}` : ''}
+            </div>
+        `;
+
+        taskDiv.innerHTML = content;
+
+        // גרירה
+        taskDiv.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', task.id.toString());
+            taskDiv.classList.add('dragging');
+        });
+
+        taskDiv.addEventListener('dragend', () => {
+            taskDiv.classList.remove('dragging');
+            columns.forEach(col => col.classList.remove('dragover'));
+        });
+
+        return taskDiv;
+    };
+
+    // רנדור משימות
+    const renderTasks = () => {
+        const containers = {
+            todo: elements['todo-tasks'],
+            inprogress: elements['inprogress-tasks'],
+            done: elements['done-tasks']
+        };
+
+        Object.values(containers).forEach(container => {
+            if (container) container.innerHTML = '';
+        });
+
+        tasks.forEach(task => {
+            const container = containers[task.status];
+            if (container) {
+                container.appendChild(createTaskElement(task));
+            }
+        });
+    };
+
+    // אחסון
+    const saveTasks = () => {
+        storage.setItem('kanbanTasks', JSON.stringify(tasks));
+    };
+
+    const loadTasks = () => {
+        const savedTasks = storage.getItem('kanbanTasks');
+        if (savedTasks) {
+            try {
+                tasks = JSON.parse(savedTasks);
+            } catch (e) {
+                tasks = [];
+            }
+        }
+        renderTasks();
+    };
+
+    // ייצוא ל-CSV
+    const exportTasksToCsv = () => {
+        if (tasks.length === 0) {
+            showToast('אין משימות לייצוא', 'warning');
+            return;
+        }
+
+        const headers = ['ID', 'טקסט', 'סטטוס', 'תאריך', 'שעה'];
+        const rows = tasks.map(task => [
+            task.id, 
+            `"${task.text.replace(/"/g, '""')}"`, 
+            task.status, 
+            task.date || '', 
+            task.time || ''
+        ]);
+
+        const csvContent = [headers.join(',')].concat(rows.map(row => row.join(','))).join('\n');
+        const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
+        const link = document.createElement('a');
+        link.href = encodedUri;
+        link.download = 'tasks.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('קובץ CSV יוצא בהצלחה!', 'success');
+    };
+
+    // ייצוא ל-Outlook (ICS)
+    const formatDateForICS = (date) => {
+        return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
+
+    const exportAllTasksToOutlook = () => {
+        const tasksWithDates = tasks.filter(task => task.date);
+        
+        if (tasksWithDates.length === 0) {
+            showToast('אין משימות עם תאריכים לייצוא', 'warning');
+            return;
+        }
+
+        tasksWithDates.forEach((task, index) => {
+            setTimeout(() => {
+                const startDateTime = new Date(`${task.date}T${task.time || '09:00'}`);
+                const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
+
+                const icsContent = [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'PRODID:-//Kanban App//PWA//HE',
+                    'CALSCALE:GREGORIAN',
+                    'METHOD:PUBLISH',
+                    'BEGIN:VEVENT',
+                    `UID:task-${task.id}@kanban-pwa.local`,
+                    `DTSTART:${formatDateForICS(startDateTime)}`,
+                    `DTEND:${formatDateForICS(endDateTime)}`,
+                    `DTSTAMP:${formatDateForICS(new Date())}`,
+                    `SUMMARY:${task.text}`,
+                    `DESCRIPTION:סטטוס: ${task.status}`,
+                    'STATUS:CONFIRMED',
+                    'END:VEVENT',
+                    'END:VCALENDAR'
+                ].join('\r\n');
+
+                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `task-${task.id}.ics`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, index * 200);
+        });
+
+        showToast(`יוצאו ${tasksWithDates.length} משימות ליומן!`, 'success');
+    };
+
+    // גרירה ושחרור
+    const setupDragAndDrop = () => {
+        columns.forEach(column => {
+            column.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                column.classList.add('dragover');
+            });
+
+            column.addEventListener('dragleave', () => {
+                column.classList.remove('dragover');
+            });
+
+            column.addEventListener('drop', (e) => {
+                e.preventDefault();
+                column.classList.remove('dragover');
+                const taskId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                const newStatus = column.dataset.status;
+                if (taskId && newStatus) {
+                    updateTaskStatus(taskId, newStatus);
+                }
+            });
+        });
+    };
+
+    // פונקציות סנכרון
+    const performSync = async (direction = 'both') => {
+        if (!navigator.onLine) {
+            showToast('אין חיבור לאינטרנט', 'error');
+            return;
+        }
+
+        try {
+            showSyncIndicator('מסנכרן...', 'loading');
+
+            if (direction === 'upload' || direction === 'both') {
+                await syncManager.uploadToGist(tasks);
+                showSyncIndicator('הועלה לענן ✓', 'success');
+            }
+
+            if (direction === 'download' || direction === 'both') {
+                const cloudTasks = await syncManager.downloadFromGist();
+                
+                // השוואה פשוטה - הנתונים החדשים ביותר מנצחים
+                const cloudTime = Math.max(...cloudTasks.map(t => t.id || 0));
+                const localTime = Math.max(...tasks.map(t => t.id || 0));
+                
+                if (cloudTime > localTime) {
+                    tasks = cloudTasks;
+                    saveTasks();
+                    renderTasks();
+                    showSyncIndicator('הורד מהענן ✓', 'success');
+                } else if (direction === 'both') {
+                    await syncManager.uploadToGist(tasks);
+                    showSyncIndicator('סונכרן ✓', 'success');
+                }
+            }
+
+            storage.setItem('lastSyncTime', new Date().toISOString());
+            syncManager.updateSyncUI();
+
+        } catch (error) {
+            console.error('Sync error:', error);
+            showSyncIndicator('שגיאה בסנכרון', 'error');
+            showToast('שגיאה בסנכרון: ' + error.message, 'error');
+        }
+    };
+
+    // אירועי סנכרון
+    const setupSyncEvents = () => {
+        if (elements.syncButton) {
+            elements.syncButton.addEventListener('click', () => performSync('both'));
+        }
+
+        if (elements.syncSettingsButton) {
+            elements.syncSettingsButton.addEventListener('click', () => {
+                if (elements.syncModal) {
+                    elements.syncModal.style.display = 'block';
+                }
+            });
+        }
+
+        if (elements.closeSyncSettings) {
+            elements.closeSyncSettings.addEventListener('click', () => {
+                if (elements.syncModal) {
+                    elements.syncModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (elements.testSyncButton) {
+            elements.testSyncButton.addEventListener('click', async () => {
+                try {
+                    const token = elements.githubToken?.value.trim();
+                    if (!token) {
+                        showToast('אנא הזן GitHub Token', 'error');
+                        return;
+                    }
+
+                    syncConfig.githubToken = token;
+                    const username = await syncManager.testConnection();
+                    showToast(`חיבור תקין ל-GitHub כ: ${username}`, 'success');
+                } catch (error) {
+                    showToast('שגיאה בחיבור: ' + error.message, 'error');
+                }
+            });
+        }
+
+        if (elements.saveSyncSettings) {
+            elements.saveSyncSettings.addEventListener('click', () => {
+                syncConfig.githubToken = elements.githubToken?.value.trim() || '';
+                syncConfig.gistId = elements.gistId?.value.trim() || '';
+                syncConfig.autoSync = elements.autoSync?.checked || false;
+                syncConfig.syncOnExit = elements.syncOnExit?.checked || false;
+
+                syncManager.saveSyncConfig();
+                syncManager.updateSyncUI();
+                showToast('הגדרות נשמרו', 'success');
+                
+                if (elements.syncModal) {
+                    elements.syncModal.style.display = 'none';
+                }
+            });
+        }
+
+        // סנכרון אוטומטי בטעינה
+        if (syncConfig.autoSync && navigator.onLine) {
+            setTimeout(() => performSync('download'), 2000);
+        }
+
+        // סנכרון בסגירה
+        if (syncConfig.syncOnExit) {
+            window.addEventListener('beforeunload', () => {
+                if (navigator.onLine) {
+                    performSync('upload');
+                }
+            });
+        }
+    };
+
+    // הגדרת אירועים ראשיים
+    const setupEventListeners = () => {
+        if (elements.addTaskButton) {
+            elements.addTaskButton.addEventListener('click', addTask);
+        }
+        
+        if (elements.newTaskInput) {
+            elements.newTaskInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addTask();
+            });
+        }
+
+        if (elements.exportCsvButton) {
+            elements.exportCsvButton.addEventListener('click', exportTasksToCsv);
+        }
+        
+        if (elements.exportAllToOutlookButton) {
+            elements.exportAllToOutlookButton.addEventListener('click', exportAllTasksToOutlook);
+        }
+
+        // הוספת deleteTask לגלובל עבור onclick
+        window.deleteTask = deleteTask;
+    };
+
+    // אתחול
+    const init = () => {
+        try {
+            setupPWA();
+            setupEventListeners();
+            setupDragAndDrop();
+            setupSyncEvents();
+            syncManager.loadSyncConfig();
+            loadTasks();
+            showToast('אפליקציה נטענה ✓', 'success');
+        } catch (error) {
+            console.error('Init error:', error);
+            showToast('שגיאה באתחול', 'error');
+        }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();
+</script>
+</body>
+</html>
